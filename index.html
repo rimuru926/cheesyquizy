@@ -5150,14 +5150,14 @@
 
   <div id="mod-section" class="section">
 
-    <div class="mod-gate" id="mod-gate">
+    <form class="mod-gate" id="mod-gate" autocomplete="off" onsubmit="return false">
       <div class="mod-gate-title">Mod Panel</div>
       <div class="mod-gate-sub">Enter the password to continue</div>
-      <input class="mod-gate-input" id="mod-gate-input" type="password"
-        placeholder="Password" autocomplete="current-password" autocorrect="off">
+      <input class="mod-gate-input" id="mod-gate-input" name="mod-key" type="password"
+        placeholder="Password" autocomplete="off" autocorrect="off">
       <div class="mod-gate-error" id="mod-gate-error"></div>
       <button type="button" class="mod-gate-btn" id="mod-gate-btn">Unlock</button>
-    </div>
+    </form>
 
     <div class="mod-content" id="mod-content" style="display:none">
 
@@ -5415,9 +5415,11 @@
 
         <div class="mod-field">
           <div class="mod-label">GitHub Token <span class="req">REQUIRED</span></div>
-          <input class="mod-input" id="sync-token" type="password"
-            placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-            autocomplete="new-password" autocorrect="off" spellcheck="false">
+          <form style="display:contents" autocomplete="off" onsubmit="return false">
+            <input class="mod-input" id="sync-token" name="sync-token" type="password"
+              placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+              autocomplete="new-password" autocorrect="off" spellcheck="false">
+          </form>
         </div>
 
         <div class="mod-field">
@@ -5880,13 +5882,14 @@ function looseMatch(text, query) {
     const group = document.getElementById(groupId);
     if (!group) return 'unset';
     const active = group.querySelector('.diff-radio-btn.active');
-    return active ? (active.dataset.gender || 'unset') : 'unset';
+    const v = active ? (active.dataset.gender || 'unset') : 'unset';
+    return v === 'genderless' ? 'other' : v; // saved as "other"
   }
   function setGenderInGroup(groupId, gender) {
     const group = document.getElementById(groupId);
     if (!group) return;
     group.querySelectorAll('.diff-radio-btn').forEach(b => {
-      b.classList.toggle('active', b.dataset.gender === gender);
+      b.classList.toggle('active', b.dataset.gender === (gender === 'other' ? 'genderless' : gender)); // data written as "other" or older "genderless"
     });
  // Also wire click handlers if not done yet
     group.querySelectorAll('.diff-radio-btn').forEach(btn => {
@@ -6356,7 +6359,7 @@ function looseMatch(text, query) {
   }
 
   // Gender tag helpers. Values in the data: male / female / genderless; anything else (unset) shows no tag.
-  function genderKey(g) { g = String(g || '').toLowerCase(); return (g === 'male' || g === 'female' || g === 'genderless') ? g : ''; }
+  function genderKey(g) { g = String(g || '').toLowerCase(); if (g === 'other') g = 'genderless'; return (g === 'male' || g === 'female' || g === 'genderless') ? g : ''; } // 'other' and 'genderless' are the same thing
   function genderLabel(g) { const k = genderKey(g); return k === 'male' ? 'Male' : k === 'female' ? 'Female' : k === 'genderless' ? 'Other' : ''; }
   function genderTagHTML(g, cls) { const k = genderKey(g); return k ? '<span class="gtag gtag-' + k + (cls ? ' ' + cls : '') + '">' + genderLabel(k) + '</span>' : ''; }
   function genderTag(g, cls) { const k = genderKey(g); if (!k) return null; const s = document.createElement('span'); s.className = 'gtag gtag-' + k + (cls ? ' ' + cls : ''); s.textContent = genderLabel(k); return s; }
@@ -6374,7 +6377,7 @@ function looseMatch(text, query) {
   function applyGenderFilter(chars) {
     if (activeGender === 'all') return chars;
     return chars.filter(c => {
-      const g = (c.gender || 'unset').toLowerCase();
+      const g = genderKey(c.gender) || 'unset'; // 'other' counts as 'genderless' here
       if (activeGender === 'genderless') return g === 'genderless';
       return g === activeGender;
     });
@@ -8922,7 +8925,7 @@ function looseMatch(text, query) {
       lines.push(`    images: ${JSON.stringify(imgs)},`);
     }
     if (c.difficulty && c.difficulty !== 'standard') lines.push(`    difficulty: ${JSON.stringify(c.difficulty)},`);
-    if (c.gender) lines.push(`    gender: ${JSON.stringify(c.gender)},`);
+    if (c.gender) lines.push(`    gender: ${JSON.stringify(c.gender === 'genderless' ? 'other' : c.gender)},`);
     const quotes = getCharQuotes(c);
     if (quotes.length <= 3) {
       quotes.forEach((q, i) => lines.push(`    ${i === 0 ? 'quote' : 'quote' + (i+1)}: ${JSON.stringify(q)},`));
@@ -10342,7 +10345,7 @@ function looseMatch(text, query) {
   const _savedOpedVol = localStorage.getItem('whosdat-oped-volume');
   let opedVolume = _savedOpedVol !== null ? Math.max(0, Math.min(100, parseInt(_savedOpedVol) || 0)) : 100; // Fix #45: || 100 was overriding saved mute
   let opedGameMode = 'anime'; // 'anime' or 'song'
-  let opedLoadWatch = null, opedPreviewActive = false;
+  let opedLoadWatch = null, opedPreviewActive = false, opedFullPlaying = false;
   // Filters (declared here, before anything can rebuild the pool)
   let opedTypeFilter = 'both';
   let opedSeriesFilter = '';      // lowercase: typed search, or the series tapped as a chip
@@ -10454,11 +10457,12 @@ function looseMatch(text, query) {
       if (!document.getElementById('oped-bars').classList.contains('playing')) startOpedVisuals(); // not again after a mid-clip stall
     });
     atPlayer.addEventListener('ended', () => {
+      if (opedFullPlaying) { opedFullStop('Song finished. Press Next when you are ready.'); return; }
       stopOpedBars();
       document.getElementById('oped-status-text').textContent = 'Clip ended. Make a guess.';
       document.getElementById('oped-status-text').classList.remove('playing');
-      document.getElementById('oped-replay-btn').disabled = (opedState === 'done');
-      document.getElementById('oped-replay-btn').textContent = 'Replay Clip';
+      if (opedState === 'done') { opedSyncReplayButton(); }
+      else { document.getElementById('oped-replay-btn').disabled = false; document.getElementById('oped-replay-btn').textContent = 'Replay Clip'; }
     });
     atPlayer.addEventListener('error', () => {
       const cur = atPlayer.getAttribute('src');
@@ -10539,6 +10543,7 @@ function looseMatch(text, query) {
           if (e.data === 1) {
             startOpedVisuals();
           }
+          if (e.data === 0 && opedFullPlaying) opedFullStop('Song finished. Press Next when you are ready.'); // YT.PlayerState.ENDED
         },
         onError: (e) => {
           const reason = ytErrorReason(e && e.data);
@@ -10609,7 +10614,7 @@ function looseMatch(text, query) {
     if (!opedCurrent) return;
     const status = document.getElementById('oped-status-text'), btn = document.getElementById('oped-replay-btn');
     stopOpedBars(); status.classList.remove('playing');
-    if (opedState === 'done') { status.textContent = 'This clip is unavailable.'; btn.disabled = false; btn.textContent = 'Replay Clip'; return; } // answer already revealed
+    if (opedState === 'done') { opedFullPlaying = false; clearInterval(opedProgressTimer); status.textContent = 'This song is unavailable.'; opedIdleButton(); return; } // answer already revealed
     markOpedBad(opedCurrent); logOpedFailure(opedCurrent, reason);
     clearTimeout(opedClipTimer); clearTimeout(opedRetryTimer);
     if (silent && opedPreflightFails < 5) { // found while getting the next clip ready: swap it quietly, nobody has pressed Play yet
@@ -10648,9 +10653,20 @@ function looseMatch(text, query) {
     pb.style.width = '0%';
 
  // Use a tiny timeout to ensure the transition reset is processed by the browser
-    setTimeout(() => {
-      const dur = opedIsFullPlayback ? ((atPlayer && atPlayer.duration) || 90) : opedDuration; // Fix #41: null-guard atPlayer
-      pb.style.transition = 'width ' + dur + 's linear';
+    clearInterval(opedProgressTimer);
+    if (opedIsFullPlayback) { // whole song: follow the real position (its length is not known in advance)
+      pb.style.transition = 'width 0.25s linear';
+      opedProgressTimer = setInterval(() => {
+        let cur = 0, len = 0;
+        try {
+          const s = opedSourceOf(opedCurrent);
+          if (s === 'youtube' && ytPlayer && ytReady) { cur = ytPlayer.getCurrentTime(); len = ytPlayer.getDuration(); }
+          else if (s === 'animethemes' || s === 'direct') { cur = atPlayer.currentTime; len = atPlayer.duration; }
+        } catch (e) {}
+        if (len > 0 && isFinite(len)) pb.style.width = Math.min(100, (cur / len) * 100) + '%';
+      }, 250);
+    } else setTimeout(() => {
+      pb.style.transition = 'width ' + opedDuration + 's linear';
       pb.style.width = '100%';
     }, 50);
 
@@ -10664,9 +10680,10 @@ function looseMatch(text, query) {
       stopOpedBars();
       statusEl.textContent = 'Clip ended. Make a guess.';
       statusEl.classList.remove('playing');
-      document.getElementById('oped-replay-btn').disabled = (opedState === 'done');
-      document.getElementById('oped-replay-btn').textContent = 'Replay Clip';
-    }, (clipDuration * 1000) + 100); // Slight padding to ensure full duration
+      if (opedState === 'done') { opedFullPlaying = false; opedSyncReplayButton(); }
+      else { document.getElementById('oped-replay-btn').disabled = false; document.getElementById('oped-replay-btn').textContent = 'Replay Clip'; }
+    }, (clipDuration * 1000) + 100);
+    if (opedState === 'done') opedSyncReplayButton(); // whole song playing: the button says Stop // Slight padding to ensure full duration
   }
 
   function getOpedClipDuration() {
@@ -10690,8 +10707,10 @@ function looseMatch(text, query) {
         statusEl.textContent = 'Buffering…';
         document.getElementById('oped-progress-bar').style.transition = 'none';
         document.getElementById('oped-progress-bar').style.width = '0%';
-        document.getElementById('oped-replay-btn').disabled = true;
-        document.getElementById('oped-replay-btn').textContent = 'Buffering…';
+        if (opedState !== 'done') { // (after the round the button stays a working Stop)
+          document.getElementById('oped-replay-btn').disabled = true;
+          document.getElementById('oped-replay-btn').textContent = 'Buffering…';
+        }
 
         const src = opedSourceOf(opedCurrent);
 
@@ -10706,10 +10725,9 @@ function looseMatch(text, query) {
             clearTimeout(opedLoadWatch);
             const loadWatched = opedCurrent;
             opedLoadWatch = setTimeout(() => {
-              if (opedCurrent !== loadWatched || opedState === 'done' || document.getElementById('oped-bars').classList.contains('playing')) return;
-              document.getElementById('oped-status-text').textContent = 'Still loading… press Play Clip to try again.';
-              document.getElementById('oped-replay-btn').disabled = false;
-              document.getElementById('oped-replay-btn').textContent = 'Play Clip';
+              if (opedCurrent !== loadWatched || (opedState === 'done' && !opedFullPlaying) || document.getElementById('oped-bars').classList.contains('playing')) return;
+              document.getElementById('oped-status-text').textContent = 'Still loading… press ' + opedBtnName() + ' to try again.';
+              opedIdleButton();
             }, 15000);
 
  // Wait for metadata to get duration for randomization
@@ -10726,7 +10744,7 @@ function looseMatch(text, query) {
               try { atPlayer.currentTime = opedStart; } catch (x) { opedStart = 0; }
               atPlayer.play().catch(err => {
                 if (err && err.name === 'AbortError') return; // interrupted by a newer load, not a broken clip
-                if (err && err.name === 'NotAllowedError') { statusEl.textContent = 'Tap Play Clip to start'; document.getElementById('oped-replay-btn').disabled = false; document.getElementById('oped-replay-btn').textContent = 'Play Clip'; return; }
+                if (err && err.name === 'NotAllowedError') { statusEl.textContent = 'Tap ' + opedBtnName() + ' to start'; opedIdleButton(); return; }
                 opedClipFailed('player error');
               });
             };
@@ -10795,13 +10813,52 @@ function looseMatch(text, query) {
       ensureYouTubeAPI().then(ok => {
         if (ok || !ytPendingPlay) return;
         ytPendingPlay = null; waitEl.textContent = 'The YouTube player could not load. Check your connection or content blocker.';
-        document.getElementById('oped-replay-btn').disabled = false; document.getElementById('oped-replay-btn').textContent = 'Play Clip';
+        opedIdleButton();
       });
     }
   }
 
   function stopOpedBars() {
     document.getElementById('oped-bars').classList.remove('playing');
+  }
+
+  // ---- After a round is over (right, out of guesses, or skipped) the main button plays the whole song, and is Stop while it plays.
+  const opedBtnName = () => (opedState === 'done' ? 'Play full song' : 'Play Clip');
+  function opedSyncReplayButton() {
+    const btn = document.getElementById('oped-replay-btn');
+    if (opedState !== 'done') return;
+    btn.disabled = false;
+    btn.textContent = opedFullPlaying ? 'Stop' : 'Play full song';
+  }
+  function opedIdleButton() { // back to the "press to start" state (after a stall, a refusal to autoplay, or a load failure)
+    const btn = document.getElementById('oped-replay-btn');
+    btn.disabled = false;
+    if (opedState === 'done') { opedFullPlaying = false; btn.textContent = 'Play full song'; } else btn.textContent = 'Play Clip';
+  }
+  function opedRoundOver() { // called when the answer has just been revealed
+    opedFullPlaying = false;
+    opedSyncReplayButton();
+    const st = document.getElementById('oped-status-text');
+    st.textContent = 'Press Play full song to hear all of it, or Next to continue.';
+    st.classList.remove('playing');
+  }
+  function opedFullStart() {
+    if (!opedCurrent) return;
+    opedFullPlaying = true;
+    opedIsFullPlayback = true; opedStart = 0; opedStartLocked = true; // the whole song, from the beginning
+    opedSyncReplayButton();
+    opedPlayClip();
+  }
+  function opedFullStop(message) {
+    opedFullPlaying = false;
+    clearTimeout(opedClipTimer); clearTimeout(opedLoadWatch); clearInterval(opedProgressTimer);
+    try { ytPlayer && ytReady && ytPlayer.stopVideo(); opedCued = null; } catch (e) {}
+    try { if (atPlayer) { atPlayer.pause(); atPlayer.src = ''; } } catch (e) {}
+    try { if (embedPlayer) embedPlayer.src = ''; } catch (e) {}
+    stopOpedBars();
+    const pb = document.getElementById('oped-progress-bar'); pb.style.transition = 'none'; pb.style.width = '0%';
+    const st = document.getElementById('oped-status-text'); st.textContent = message || 'Stopped.'; st.classList.remove('playing');
+    opedSyncReplayButton();
   }
 
   function initOpedGame() {
@@ -10833,7 +10890,7 @@ function looseMatch(text, query) {
   function loadOpedNext() {
     clearTimeout(opedRetryTimer);
     opedPlayRequested = false; opedCued = null;
-    opedIsFullPlayback = false;
+    opedIsFullPlayback = false; opedFullPlaying = false; clearInterval(opedProgressTimer);
     const inputEl = document.getElementById('oped-input');
     inputEl.value = ''; inputEl.disabled = false;
     document.getElementById('oped-ac').innerHTML = '';
@@ -10932,7 +10989,7 @@ function looseMatch(text, query) {
       rev.classList.add('show');
       document.getElementById('oped-next-btn').style.display = '';
       document.getElementById('oped-skip-btn').style.display = 'none';
-      document.getElementById('oped-replay-btn').disabled = true;
+      opedRoundOver();
     } else {
       opedGuessesLeft--;
       const dotIdx = 5 - opedGuessesLeft - 1;
@@ -10962,7 +11019,7 @@ function looseMatch(text, query) {
         rev.classList.add('show');
         document.getElementById('oped-next-btn').style.display = '';
         document.getElementById('oped-skip-btn').style.display = 'none';
-        document.getElementById('oped-replay-btn').disabled = true;
+        opedRoundOver();
       }
     }
   }
@@ -11160,7 +11217,10 @@ function looseMatch(text, query) {
     return matches;
   }
 
-  document.getElementById('oped-replay-btn').addEventListener('click', () => { opedPlayClip(); });
+  document.getElementById('oped-replay-btn').addEventListener('click', () => {
+    if (opedState === 'done') { if (opedFullPlaying) opedFullStop('Stopped.'); else opedFullStart(); return; }
+    opedPlayClip();
+  });
 
   document.getElementById('oped-input').addEventListener('input', e => { opedBuildAc(e.target.value); });
   document.getElementById('oped-mod-title').addEventListener('input', e => { opedModBuildAc(e.target.value); updateOpedDuplicateNotice(); });
@@ -11204,7 +11264,7 @@ function looseMatch(text, query) {
     rev.classList.add('show');
     document.getElementById('oped-next-btn').style.display = '';
     document.getElementById('oped-skip-btn').style.display = 'none';
-    document.getElementById('oped-replay-btn').disabled = true;
+    opedRoundOver();
   });
 
   document.getElementById('oped-next-btn').addEventListener('click', () => { loadOpedNext(); });
@@ -11275,7 +11335,7 @@ function looseMatch(text, query) {
         rev.classList.add('show');
         document.getElementById('oped-next-btn').style.display = '';
         document.getElementById('oped-skip-btn').style.display = 'none';
-        opedPlayClip();
+        opedFullStart();
       });
       item.querySelector('.oped-entry-edit').addEventListener('click', () => {
         editingOpedIdx = idx;
@@ -12883,7 +12943,7 @@ function looseMatch(text, query) {
       const imgs = getCharImages(c);
       const quotes = getCharQuotes(c);
       const isHC = c.difficulty === 'hardcore' || getSeriesDiff(c.series) === 'hardcore';
-      const genderIcon = c.gender === 'male' ? 'Male' : c.gender === 'female' ? 'Female' : c.gender === 'genderless' ? 'Other' : null;
+      const genderIcon = genderLabel(c.gender) || null;
 
       document.getElementById('lib-modal-name').textContent = c.name;
       document.getElementById('lib-modal-series').textContent = c.series || '';
@@ -13213,6 +13273,13 @@ function looseMatch(text, query) {
     let rt = null;
     window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(build, 150); });
   })();
+
+  // Tell the browser and password managers that none of the answer / search boxes are logins
+  document.querySelectorAll('input').forEach(el => {
+    if (['hidden', 'file', 'range', 'checkbox', 'radio', 'button', 'submit'].includes(el.type)) return;
+    if (!el.hasAttribute('autocomplete') || el.type === 'text' || el.type === 'search') el.setAttribute('autocomplete', 'off');
+    el.setAttribute('data-lpignore', 'true'); el.setAttribute('data-1p-ignore', 'true'); el.setAttribute('data-bwignore', 'true'); el.setAttribute('data-form-type', 'other');
+  });
 
   // Menu items are div elements: make them reachable and usable with the keyboard, and label inputs for screen readers
   document.querySelectorAll('.drawer-item[data-tab]').forEach(item => {
